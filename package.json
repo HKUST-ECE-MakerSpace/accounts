@@ -1,0 +1,14 @@
+{
+  "name": "accounts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ECE MakerSpace account service — PIN auth with email magic-link reset.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  }
+}
