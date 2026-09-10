@@ -17,7 +17,7 @@
 //   GET  /api/me                      session info (JSON)
 //   POST /api/login                   {itsc, pin} (JSON)
 //   POST /api/logout                  (JSON)
-//   GET  /track/*                     reserved for the workshop tracker
+//   GET  /track                       mahjong leaderboard + recent games
 //
 // Bind defaults to 127.0.0.1:3100 (override with HOST / PORT).
 
@@ -26,6 +26,7 @@ import http from 'node:http';
 import { openDb } from './db.js';
 import * as A from './auth.js';
 import { sendEmail } from './mailer.js';
+import { initGames, trackHome, trackNewPage, trackNewSubmit, apiLeaderboard, apiGamesList, apiGamesCreate, trackGameDelete } from './games.js';
 import * as P from './pages.js';
 
 function die(msg) { console.error('FATAL:', msg); process.exit(1); }
@@ -47,7 +48,7 @@ const cfg = {
 
 const db = openDb(cfg.dataDir);
 A.purgeExpired(db);
-
+initGames(db);
 // ---- HTTP plumbing ---------------------------------------------------------
 
 function applyHeaders(res) {
@@ -259,13 +260,40 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true }, { 'set-cookie': clearCookie() });
     }
 
-    // Reserved for the workshop tracker (served later by this same service).
-    if (p === '/track' || p.startsWith('/track/')) {
-      return wantsJson(req) || p.startsWith('/api')
-        ? sendJson(res, 404, { ok: false, error: 'reserved for the workshop tracker' })
-        : sendHtml(res, 404, P.pageMessage('Coming soon', '<p>The workshop tracker will live here.</p>'));
+    // ---- mahjong points tracker --------------------------------------------
+    const render = (r) => {
+      if (r.json !== undefined) return sendJson(res, r.status, r.json);
+      if (r.status === 401 && !wantsJson(req)) return sendRedirect(res, '/login');
+      return sendHtml(res, r.status, r.html);
+    };
+
+    if (p === '/track' && method === 'GET')
+      return render(trackHome(db, sessionFor(req)));
+
+    if (p === '/track/new' && method === 'GET')
+      return render(trackNewPage(db, sessionFor(req)));
+
+    if (p === '/track/new' && method === 'POST') {
+      const user = sessionFor(req);
+      const body = await readBody(req);
+      return render(trackNewSubmit(db, user, body));
     }
 
+    if (p === '/api/leaderboard' && method === 'GET')
+      return render(apiLeaderboard(db, Object.fromEntries(url.searchParams)));
+
+    if (p === '/api/games' && method === 'GET')
+      return render(apiGamesList(db, Object.fromEntries(url.searchParams)));
+
+    if (p === '/api/games' && method === 'POST') {
+      const user = sessionFor(req);
+      const body = await readBody(req);
+      return render(apiGamesCreate(db, user, body));
+    }
+
+    const gameDelete = p.match(/^\/track\/games\/(\d+)\/delete$/);
+    if (gameDelete && method === 'POST')
+      return render(trackGameDelete(db, sessionFor(req), Number(gameDelete[1])));
     // ---- admin actions (JSON or form) --------------------------------------
     const adminMatch = p.match(/^\/admin\/users\/(\d+)\/(reset|deactivate)$/);
     if (adminMatch && method === 'POST') {
