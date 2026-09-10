@@ -12,21 +12,35 @@ export function esc(s) {
 }
 
 const STYLE = `
+  :root{--felt:#1a5c34;--felt-dark:#124425;--ivory:#f8f6ee;--ink:#1c1c1c;--red:#c0392b;--gold:#a07d1c}
+  *{box-sizing:border-box}
   body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-       background:#faf9f5;color:#1f1f1f;max-width:760px;margin:2rem auto;padding:0 1rem;text-align:center}
-  a{color:#0366d6}
-  table{margin:1rem auto;border-collapse:collapse}
+       background:var(--ivory);color:var(--ink);max-width:760px;margin:0 auto;padding:0 1rem 2rem;text-align:center}
+  .brand{background:linear-gradient(180deg,var(--felt) 0%,var(--felt-dark) 100%);color:var(--ivory);
+         margin:0 -1rem;padding:.8rem 1rem .7rem;border-bottom:3px solid var(--red)}
+  .brand h1{margin:.2rem 0;font-size:1.05rem;font-weight:600;letter-spacing:.02em}
+  .brand .zh{color:#ffd9a8;font-size:.8rem;letter-spacing:.35em}
+  .brand nav{margin-top:.35rem;font-size:.85rem}
+  .brand a{color:var(--ivory);text-decoration:underline;text-underline-offset:2px}
+  a{color:var(--felt)}
+  a:hover{color:var(--red)}
+  h2{margin:1.4rem auto .6rem}
+  table{margin:1rem auto;border-collapse:collapse;background:#fff;border:1px solid #d8d1b8;
+        border-radius:6px;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(28,28,28,.08)}
+  th{background:var(--felt);color:var(--ivory);font-weight:600}
   td,th{border:1px solid #ccc;padding:.35rem .7rem;text-align:left}
-  th{background:#f0eee6}
-  button{margin:.2rem;padding:.35rem .9rem;font:inherit;cursor:pointer}
-  input,select,textarea{padding:.4rem;font-size:1rem}
+  button{margin:.2rem;padding:.35rem .9rem;font:inherit;cursor:pointer;background:var(--felt);
+         color:var(--ivory);border:1px solid var(--felt-dark);border-radius:6px}
+  button:hover{background:var(--felt-dark)}
+  button.danger{background:var(--red);border-color:#8f2b20}
+  input,select,textarea{padding:.4rem;font-size:1rem;border:1px solid #b8b096;border-radius:6px;background:#fff}
+  input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--red);outline-offset:1px}
   .muted{color:#666}
-  .dealer{color:#7a5c00}
-  .danger{color:#a11}
-  .nav{margin-top:2rem;font-size:.9rem}
+  .dealer{color:var(--gold)}
+  .danger{color:var(--red)}
 `;
 
-const NAV = '<a href="/">home</a> &middot; <a href="/track">tracker</a>';
+const NAV = '<a href="/">accounts home</a> &middot; <a href="/track">tracker</a>';
 
 function layout(title, body, script = '', nav = NAV) {
   return `<!doctype html>
@@ -35,15 +49,20 @@ function layout(title, body, script = '', nav = NAV) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
+<title>${esc(title)} — HK Mahjong @ ECE MakerSpace</title>
 <style>${STYLE}</style>
 </head>
 <body>
+<header class="brand">
+  <div class="zh">香港麻雀</div>
+  <h1>HK Mahjong @ ECE MakerSpace</h1>
+  <nav>${nav}</nav>
+</header>
 <h2>${esc(title)}</h2>
-${body}
-<p class="nav">${nav}</p>
+ ${body}
+<footer class="muted" style="margin-top:2rem;font-size:.8rem">HKUST ECE MakerSpace &middot; points tracker</footer>
 <script>${script}</script>
-</body>
-</html>`;
+</body>`;
 }
 
 // leaderboard: [{ itsc, display_name, games, total, avg, best }] (sorted);
