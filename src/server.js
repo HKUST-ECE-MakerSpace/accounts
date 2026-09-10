@@ -261,19 +261,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- mahjong points tracker --------------------------------------------
-    const render = (r) => {
-      if (r.json !== undefined) return sendJson(res, r.status, r.json);
-      if (r.status === 401 && !wantsJson(req)) return sendRedirect(res, '/login');
-      return sendHtml(res, r.status, r.html);
-    };
+    // /track and /track/... are also served under mahjong.ecemaker.space/track/*
+    // via the Caddy proxy, which preserves any trailing slash — accept both.
+    const tp = p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
 
-    if (p === '/track' && method === 'GET')
+    if (tp === '/track' && method === 'GET')
       return render(trackHome(db, sessionFor(req)));
 
-    if (p === '/track/new' && method === 'GET')
+    if (tp === '/track/new' && method === 'GET')
       return render(trackNewPage(db, sessionFor(req)));
 
-    if (p === '/track/new' && method === 'POST') {
+    if (tp === '/track/new' && method === 'POST') {
       const user = sessionFor(req);
       const body = await readBody(req);
       return render(trackNewSubmit(db, user, body));
@@ -291,7 +289,7 @@ const server = http.createServer(async (req, res) => {
       return render(apiGamesCreate(db, user, body));
     }
 
-    const gameDelete = p.match(/^\/track\/games\/(\d+)\/delete$/);
+    const gameDelete = tp.match(/^\/track\/games\/(\d+)\/delete$/);
     if (gameDelete && method === 'POST')
       return render(trackGameDelete(db, sessionFor(req), Number(gameDelete[1])));
     // ---- admin actions (JSON or form) --------------------------------------
