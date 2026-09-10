@@ -265,6 +265,12 @@ const server = http.createServer(async (req, res) => {
     // via the Caddy proxy, which preserves any trailing slash — accept both.
     const tp = p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
 
+    const render = (r) => {
+      if (r.json !== undefined) return sendJson(res, r.status, r.json);
+      if (r.status === 401 && !wantsJson(req)) return sendRedirect(res, '/login');
+      return sendHtml(res, r.status, r.html);
+    };
+
     if (tp === '/track' && method === 'GET')
       return render(trackHome(db, sessionFor(req)));
 
