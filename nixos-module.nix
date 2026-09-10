@@ -63,7 +63,7 @@ in
         PORT = toString cfg.port;
         DATA_DIR = cfg.stateDir;
         PUBLIC_BASE_URL = "https://${cfg.domain}";
-        ADMIN_ITSCS = concatStringsSep "," cfg.adminItsces;
+        ADMIN_ITSCS = lib.concatStringsSep "," cfg.adminItsces;
       };
 
       serviceConfig = {
