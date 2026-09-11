@@ -49,6 +49,14 @@ export function burnScrypt() {
 
 export const validPin = (pin) => /^\d{4,8}$/.test(String(pin ?? ''));
 
+// Optional HKUST student ID (SID): 8 digits in practice, accepted loosely up
+// to 10. Returns the trimmed digits, '' when blank (treated as absent), or
+// null when present but malformed.
+export const normalizeStudentId = (s) => {
+  const sid = String(s ?? '').trim();
+  return !sid || /^\d{8,10}$/.test(sid) ? sid : null;
+};
+
 // ITSC logins arrive as "wli", "WLI", or "wli@connect.ust.hk"; normalize and
 // sanity-check. Returns the lowercase login or null.
 export function normalizeItsc(s) {
@@ -73,11 +81,11 @@ export function getUserById(db, id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id) ?? null;
 }
 
-export function createUser(db, { itsc, displayName = '', now = nowSec(), adminItsces = [] }) {
+export function createUser(db, { itsc, displayName = '', pinHash = null, now = nowSec(), adminItsces = [] }) {
   const isAdmin = adminItsces.includes(itsc) ? 1 : 0;
   const r = db.prepare(
-    'INSERT INTO users (itsc, display_name, created_at, is_admin) VALUES (?, ?, ?, ?)'
-  ).run(itsc, String(displayName ?? '') || itsc, now, isAdmin);
+    'INSERT INTO users (itsc, display_name, pin_hash, created_at, is_admin) VALUES (?, ?, ?, ?, ?)'
+  ).run(itsc, String(displayName ?? '') || itsc, pinHash, now, isAdmin);
   return getUserById(db, r.lastInsertRowid);
 }
 

@@ -83,8 +83,12 @@ export function pageMe(user, sess) {
   const chips =
     (user.is_admin ? '<span class="chip admin">admin</span>' : '') +
     (user.must_set_pin ? '' : '<span class="chip on">PIN set</span>');
+  const nudge = user.must_set_pin
+    ? '<p class="muted">You\'re signed in with your student ID as your PIN. Set a PIN only you know.</p>'
+    : '';
   const body = `
 <p><b>${esc(user.display_name || user.itsc)}</b>${chips}</p>
+${nudge}
 <table>
   <tr><th>ITSC</th><td><code>${esc(user.itsc)}</code></td></tr>
   <tr><th>Email</th><td>${esc(user.itsc)}@connect.ust.hk</td></tr>
@@ -177,6 +181,8 @@ ${u.active ? `<button data-act="deactivate" data-id="${u.id}" data-name="${esc(u
 <form id="add-user" class="inline">
   <label for="itsc">ITSC login</label>
   <input id="itsc" name="itsc" required placeholder="itsc">
+  <label for="sid">Student ID (optional — PIN defaults to it)</label>
+  <input id="sid" name="student_id" inputmode="numeric" autocomplete="off" placeholder="8-10 digits">
   <label for="name">Display name</label>
   <input id="name" name="display_name" placeholder="optional">
   <div><button type="submit">Add user &amp; send invite</button></div>
@@ -216,7 +222,7 @@ document.querySelectorAll('button[data-act]').forEach((b)=>{
 document.getElementById('add-user').onsubmit=async(e)=>{
   e.preventDefault();
   const f=e.target;
-  const j=await post('/admin/users',{itsc:f.itsc.value,display_name:f.display_name.value});
+  const j=await post('/admin/users',{itsc:f.itsc.value,display_name:f.display_name.value,student_id:f.student_id.value});
   if(j){f.reset();location.reload();}
 };`;
   return layout('Accounts admin', body, script, '<a href="/">home</a>');

@@ -10,7 +10,7 @@
 //   GET/POST /forgot                  email a reset link (generic response)
 //   GET/POST /reset?token=…           set/reset PIN via magic link
 //   GET  /admin                       user list + actions (admin session)
-//   POST /admin/users                 add user + send invite
+//   POST /admin/users                 add user (+ optional SID as first PIN)
 //   POST /invite                      (re)send invite for a user
 //   POST /admin/users/:id/reset       force-reset a user's PIN
 //   POST /admin/users/:id/deactivate  block sign-ins, kill sessions
@@ -123,6 +123,10 @@ const wantsJson = (req) => String(req.headers['content-type'] || '').includes('j
 // ---- flows -----------------------------------------------------------------
 
 const magicLink = (token) => `${cfg.baseUrl}/reset?token=${token}`;
+
+// Admin onboarded a member with their HKUST student ID: no invite email goes
+// out, the SID works as the first PIN, and /me nudges them to set their own.
+const sidPinMessage = 'account ready — PIN is their student ID (8-10 digits); tell them to sign in and set their own PIN';
 
 // Shared core for POST /login (HTML) and POST /api/login (JSON).
 // Returns { status, user?, session? } — generic 401 for unknown account,
@@ -329,6 +333,15 @@ const server = http.createServer(async (req, res) => {
       const itsc = A.normalizeItsc(body.itsc);
       if (!itsc) return sendJson(res, 400, { ok: false, error: 'invalid itsc login' });
       if (A.getUserByItsc(db, itsc)) return sendJson(res, 409, { ok: false, error: `${itsc} already exists` });
+      const sid = A.normalizeStudentId(body.student_id);
+      if (sid === null) return sendJson(res, 400, { ok: false, error: 'student id must be 8-10 digits' });
+
+      if (sid) {
+        // The student ID IS the first PIN; must_set_pin keeps its default so
+        // /me nudges the member to set a private one. No email is sent.
+        const user = A.createUser(db, { itsc, pinHash: A.hashPin(sid), displayName: String(body.display_name ?? ''), adminItsces: cfg.adminItsces });
+        return sendJson(res, 200, { ok: true, id: user.id, message: sidPinMessage });
+      }
 
       const user = A.createUser(db, { itsc, displayName: String(body.display_name ?? ''), adminItsces: cfg.adminItsces });
       const token = await sendInvite(user);
@@ -343,9 +356,20 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const itsc = A.normalizeItsc(body.itsc);
       if (!itsc) return sendJson(res, 400, { ok: false, error: 'invalid itsc login' });
+      const sid = A.normalizeStudentId(body.student_id);
+      if (sid === null) return sendJson(res, 400, { ok: false, error: 'student id must be 8-10 digits' });
+
       let user = A.getUserByItsc(db, itsc);
       if (!user) user = A.createUser(db, { itsc, displayName: String(body.display_name ?? ''), adminItsces: cfg.adminItsces });
       if (!user.active) return sendJson(res, 409, { ok: false, error: 'account is deactivated' });
+
+      if (sid) {
+        // SID invite: give PIN-less accounts their student ID as the first
+        // PIN; an existing PIN is never silently overwritten. No email.
+        if (user.pin_hash) return sendJson(res, 409, { ok: false, error: 'user already has a PIN' });
+        db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(A.hashPin(sid), user.id);
+        return sendJson(res, 200, { ok: true, message: sidPinMessage });
+      }
 
       const token = await sendInvite(user);
       return sendJson(res, 200, { ok: true, link: magicLink(token) });

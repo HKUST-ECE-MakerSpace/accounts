@@ -8,6 +8,8 @@ Users are identified by their ITSC login (`wli`) with canonical email
 account invites go through single-use magic links emailed via the org's
 Power Automate flow (same as [signups](https://github.com/HKUST-ECE-MakerSpace/signups)).
 Admins manage accounts at `/admin`. Self-service signup does not exist.
+Admins can skip the invite email by entering the member's HKUST student ID:
+the SID becomes their default PIN and `/me` nudges them to set a private one.
 
 Other MakerSpace tools (the workshop tracker today) reuse this service's
 session cookie for auth.

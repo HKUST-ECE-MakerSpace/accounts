@@ -2,14 +2,18 @@
 //
 // Covers: PIN hash/verify roundtrip + wrong PIN, lockout counting, session
 // create/validate/expiry/destroy, magic-token single-use + expiry, the
-// forgot-PIN rate-limit window, HTML escaping, and the Power Automate mailer
-// (stubbed fetch, asserting the exact payload shape).
+// forgot-PIN rate-limit window, HTML escaping, the Power Automate mailer
+// (stubbed fetch, asserting the exact payload shape), and the SID-onboarding
+// admin flows (real server child process on an ephemeral port).
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
 
 import { openDb } from '../src/db.js';
 import * as A from '../src/auth.js';
@@ -248,4 +252,146 @@ test('mailer: flow errors and network errors never throw', async () => {
   assert.equal(r3.ok, false);
   assert.equal(r3.reason, 'no_recipient');
   assert.equal(s2.calls.length, 0);
+});
+
+// ---- SID onboarding: admin sets a member's HKUST student ID as first PIN ---
+//
+// Boots the real server as a child process on an ephemeral port with a
+// throwaway data dir and exercises the admin endpoints over HTTP. The admin
+// user and its session are seeded straight into the same SQLite file (WAL,
+// second connection). Mail runs MAIL_DEV-gated; the magic_tokens table is
+// the observable for whether the invite-email path ran.
+
+const sidDir = fs.mkdtempSync(path.join(os.tmpdir(), 'accounts-sid-'));
+const sidDb = openDb(sidDir);
+const sidPort = await new Promise((resolve, reject) => {
+  const probe = net.createServer();
+  probe.once('error', reject);
+  probe.listen(0, '127.0.0.1', () => {
+    const { port } = probe.address();
+    probe.close(() => resolve(port));
+  });
+});
+const sidBase = `http://127.0.0.1:${sidPort}`;
+const sidAdminId = sidDb.prepare(
+  "INSERT INTO users (itsc, display_name, is_admin) VALUES ('sidadmin', 'SID Admin', 1)"
+).run().lastInsertRowid;
+const { token: sidAdminToken } = A.createSession(sidDb, sidAdminId);
+const sidAdminCookie = `ms_session=${sidAdminToken}`;
+
+const sidChild = spawn(process.execPath, [fileURLToPath(new URL('../src/server.js', import.meta.url))], {
+  env: {
+    ...process.env,
+    PORT: String(sidPort),
+    HOST: '127.0.0.1',
+    DATA_DIR: sidDir,
+    PUBLIC_BASE_URL: sidBase,
+    ADMIN_ITSCS: 'sidadmin',
+    COOKIE_DOMAIN: '',
+    MAIL_DEV: '1',
+    MAIL_DEV_EMAIL: 'sidadmin@connect.ust.hk',
+    PA_MAIL_URL: 'http://127.0.0.1:9/unreachable-flow',
+    PA_MAIL_TOKEN: 'sid-test',
+  },
+  stdio: 'ignore',
+});
+after(() => sidChild.kill('SIGTERM'));
+
+const waitHealthy = async () => {
+  for (let i = 0; i < 100; i++) {
+    try { if ((await fetch(`${sidBase}/healthz`)).ok) return; } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error('SID test server failed to boot');
+};
+await waitHealthy();
+
+const api = async (p, { method = 'GET', body, cookie } = {}) => {
+  const res = await fetch(`${sidBase}${p}`, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(cookie ? { cookie } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return {
+    status: res.status,
+    json: await res.json().catch(() => null),
+    cookie: (res.headers.get('set-cookie') || '').split(';')[0] || null,
+  };
+};
+
+const inviteTokens = (itsc) =>
+  sidDb.prepare('SELECT COUNT(*) AS c FROM magic_tokens WHERE email = ?').get(`${itsc}@connect.ust.hk`).c;
+
+test('admin add-user with student_id: SID is the first PIN, no magic token, must_set_pin stays', async () => {
+  const r = await api('/admin/users', {
+    method: 'POST',
+    cookie: sidAdminCookie,
+    body: { itsc: 'sidnew', display_name: 'Sid New', student_id: '20987654' },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  assert.ok(r.json.id > 0);
+  assert.ok(r.json.message.includes('student ID (8-10 digits)'));
+  assert.ok(!('link' in r.json));                  // no magic link to show
+  assert.ok(!r.json.message.includes('20987654')); // response never echoes the SID
+  assert.equal(inviteTokens('sidnew'), 0);         // invite-email path skipped
+
+  const login = await api('/api/login', { method: 'POST', body: { itsc: 'sidnew', pin: '20987654' } });
+  assert.equal(login.status, 200);
+  assert.ok(login.cookie);
+
+  const me = await api('/api/me', { cookie: login.cookie });
+  assert.equal(me.status, 200);
+  assert.equal(me.json.user.itsc, 'sidnew');
+  assert.equal(me.json.user.must_set_pin, true);
+});
+
+test('admin add-user without student_id: unchanged invite flow, magic token created', async () => {
+  const r = await api('/admin/users', { method: 'POST', cookie: sidAdminCookie, body: { itsc: 'mailnew' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  assert.ok(r.json.link.startsWith(`${sidBase}/reset?token=`));
+  assert.equal(inviteTokens('mailnew'), 1);
+});
+
+test('invite with student_id: sets the SID PIN on a PIN-less user; 409, no overwrite when a PIN exists', async () => {
+  sidDb.prepare("INSERT INTO users (itsc, display_name) VALUES ('nopin', 'No Pin')").run();
+  const r = await api('/invite', { method: 'POST', cookie: sidAdminCookie, body: { itsc: 'nopin', student_id: '21234678' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.ok, true);
+  assert.ok(r.json.message.includes('student ID (8-10 digits)'));
+  assert.equal(inviteTokens('nopin'), 0);
+  assert.equal((await api('/api/login', { method: 'POST', body: { itsc: 'nopin', pin: '21234678' } })).status, 200);
+
+  sidDb.prepare("INSERT INTO users (itsc, display_name, pin_hash, must_set_pin) VALUES ('haspin', 'Has Pin', ?, 0)")
+    .run(A.hashPin('111222'));
+  const hashBefore = sidDb.prepare("SELECT pin_hash FROM users WHERE itsc = 'haspin'").get().pin_hash;
+  const r2 = await api('/invite', { method: 'POST', cookie: sidAdminCookie, body: { itsc: 'haspin', student_id: '21234679' } });
+  assert.equal(r2.status, 409);
+  assert.deepEqual(r2.json, { ok: false, error: 'user already has a PIN' });
+  assert.equal(sidDb.prepare("SELECT pin_hash FROM users WHERE itsc = 'haspin'").get().pin_hash, hashBefore);
+  assert.equal((await api('/api/login', { method: 'POST', body: { itsc: 'haspin', pin: '111222' } })).status, 200);
+});
+
+test('student_id validation: 7/11 digits and non-numeric 400 before any user creation; blank means absent', async () => {
+  for (const [itsc, bad] of [['bad7', '1234567'], ['bad11', '12345678901'], ['badalpha', '2098765a']]) {
+    const r = await api('/admin/users', { method: 'POST', cookie: sidAdminCookie, body: { itsc, student_id: bad } });
+    assert.equal(r.status, 400, `expected 400 for ${JSON.stringify(bad)}`);
+    assert.equal(r.json.ok, false);
+  }
+  assert.equal(sidDb.prepare("SELECT COUNT(*) AS c FROM users WHERE itsc LIKE 'bad%'").get().c, 0);
+
+  const nopinHash = sidDb.prepare("SELECT pin_hash FROM users WHERE itsc = 'nopin'").get().pin_hash;
+  const r = await api('/invite', { method: 'POST', cookie: sidAdminCookie, body: { itsc: 'nopin', student_id: '1234567' } });
+  assert.equal(r.status, 400);
+  assert.equal(sidDb.prepare("SELECT pin_hash FROM users WHERE itsc = 'nopin'").get().pin_hash, nopinHash);
+
+  // blank (whitespace-only) counts as absent: the form always sends the field
+  const blank = await api('/admin/users', { method: 'POST', cookie: sidAdminCookie, body: { itsc: 'blankok', student_id: '   ' } });
+  assert.equal(blank.status, 200);
+  assert.ok(blank.json.link.startsWith(`${sidBase}/reset?token=`));
+  assert.equal(inviteTokens('blankok'), 1);
 });
