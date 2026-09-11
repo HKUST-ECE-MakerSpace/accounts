@@ -15,7 +15,8 @@ const STYLE = `
   :root{--felt:#1a5c34;--felt-dark:#124425;--ivory:#f8f6ee;--ink:#1c1c1c;--red:#c0392b;--gold:#a07d1c}
   *{box-sizing:border-box}
   body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-       background:var(--ivory);color:var(--ink);max-width:760px;margin:0 auto;padding:0 1rem 2rem;text-align:center}
+       background:var(--ivory);color:var(--ink);max-width:760px;margin:0 auto;
+       padding:0 1rem max(2rem,env(safe-area-inset-bottom));text-align:center}
   .brand{background:linear-gradient(180deg,var(--felt) 0%,var(--felt-dark) 100%);color:var(--ivory);
          margin:0 -1rem;padding:.8rem 1rem .7rem;border-bottom:3px solid var(--red)}
   .brand h1{margin:.2rem 0;font-size:1.05rem;font-weight:600;letter-spacing:.02em}
@@ -28,16 +29,24 @@ const STYLE = `
   table{margin:1rem auto;border-collapse:collapse;background:#fff;border:1px solid #d8d1b8;
         border-radius:6px;box-shadow:0 1px 0 #fff inset,0 2px 4px rgba(28,28,28,.08)}
   th{background:var(--felt);color:var(--ivory);font-weight:600}
-  td,th{border:1px solid #ccc;padding:.35rem .7rem;text-align:left}
-  button{margin:.2rem;padding:.35rem .9rem;font:inherit;cursor:pointer;background:var(--felt);
-         color:var(--ivory);border:1px solid var(--felt-dark);border-radius:6px}
+  td,th{border:1px solid #ccc;padding:.5rem .7rem;text-align:left}
+  button{margin:.2rem;padding:.6rem 1.1rem;font:inherit;cursor:pointer;background:var(--felt);
+         color:var(--ivory);border:1px solid var(--felt-dark);border-radius:6px;min-height:44px}
   button:hover{background:var(--felt-dark)}
-  button.danger{background:var(--red);border-color:#8f2b20}
-  input,select,textarea{padding:.4rem;font-size:1rem;border:1px solid #b8b096;border-radius:6px;background:#fff}
-  input:focus,select:focus,textarea:focus,button:focus{outline:2px solid var(--red);outline-offset:1px}
+  button.danger{background:var(--red);border-color:#8f2b20;min-height:40px}
+  input,select,textarea{padding:.55rem;font-size:16px;border:1px solid #b8b096;border-radius:6px;background:#fff;
+         width:100%;min-width:0;box-sizing:border-box}
+  input[size="7"]{max-width:90px}
   .muted{color:#666}
   .dealer{color:var(--gold)}
   .danger{color:var(--red)}
+  .twrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:1rem 0}
+  .twrap table{margin:0 auto;min-width:420px}
+  .brand nav a,.nav a{display:inline-block;padding:.45rem .4rem}
+  @media (max-width:480px){
+    .brand h1{font-size:.95rem}
+    td,th{padding:.4rem .5rem}
+  }
 `;
 
 const NAV = '<a href="/">accounts home</a> &middot; <a href="/track">tracker</a>';
@@ -48,6 +57,7 @@ function layout(title, body, script = '', nav = NAV) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a5c34">
 <title>${esc(title)}</title>
 <title>${esc(title)} — HK Mahjong @ ECE MakerSpace</title>
 <style>${STYLE}</style>
@@ -71,14 +81,14 @@ function layout(title, body, script = '', nav = NAV) {
 export function pageTrack(leaderboard, games, opts = {}) {
   const lb = leaderboard.length === 0
     ? '<p class="muted">No games recorded yet.</p>'
-    : `<table>
+    : `<div class="twrap"><table>
 <tr><th>#</th><th>player</th><th>games</th><th>total</th><th>avg</th><th>best</th></tr>
 ${leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.display_name)} <span class="muted">(${esc(r.itsc)})</span></td><td>${esc(r.games)}</td><td><b>${esc(r.total)}</b></td><td>${esc(r.avg)}</td><td>${esc(r.best)}</td></tr>`).join('\n')}
-</table>`;
+</table></div>`;
 
   const gl = games.length === 0
     ? '<p class="muted">No games recorded yet.</p>'
-    : `<table>
+    : `<div class="twrap"><table>
 <tr><th>game</th><th>players (seat order, &#9733; dealer)</th><th>notes</th><th></th></tr>
 ${games.map((g) => {
     const players = g.players
@@ -126,12 +136,12 @@ document.querySelector('form').addEventListener('submit',function(e){
   return layout('Record a game', `
 <p class="muted">recording as ${esc(user.display_name)} (${esc(user.itsc)}) &middot; unknown itsc logins are auto-registered</p>
 <form method="post" action="/track/new">
-<table>
+<div class="twrap"><table>
 <tr><th></th><th>itsc login</th><th>score</th></tr>
 ${rows}
 <tr><td class="muted">dealer</td><td colspan="2"><select name="dealer">${dealerOpts}</select></td></tr>
 <tr><td class="muted">notes</td><td colspan="2"><input name="notes" size="32" placeholder="optional"></td></tr>
-</table>
+</table></div>
 <button>record game</button>
 </form>`, script, NAV + ' &middot; <a href="/track/new">record</a>');
 }
