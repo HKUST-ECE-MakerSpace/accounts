@@ -97,7 +97,7 @@ ${games.map((g) => {
     const del = opts.isAdmin ? `<button class="danger del" data-id="${Number(g.id)}">delete</button>` : '';
     return `<tr><td>#${Number(g.id)}<br><span class="muted">${esc(String(g.played_at ?? '').slice(0, 16))}</span></td><td>${players}</td><td>${g.notes ? esc(g.notes) : '<span class="muted">&mdash;</span>'}</td><td>${del}</td></tr>`;
   }).join('\n')}
-</table>`;
+</table></div>`;
 
   const script = `
 document.querySelectorAll('button.del').forEach(function(b){
